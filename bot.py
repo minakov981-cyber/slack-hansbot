@@ -1,38 +1,29 @@
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
-from pathlib import Path
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-# 🔐 Load .env
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
-
+# 🔑 ENV (Railway бере автоматично)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
 
-if not OPENAI_API_KEY:
-    raise ValueError("❌ OPENAI_API_KEY not found")
-
-if not SLACK_BOT_TOKEN:
-    raise ValueError("❌ SLACK_BOT_TOKEN not found")
-
-if not SLACK_APP_TOKEN:
-    raise ValueError("❌ SLACK_APP_TOKEN not found")
-
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# 🚀 Slack app
+# 🤖 Slack app
 app = App(token=SLACK_BOT_TOKEN)
+
+
+# 🧠 OpenAI client (створюємо коли потрібно)
+def get_openai_client():
+    api_key = os.getenv("OPENAI_API_KEY")
+    return OpenAI(api_key=api_key)
+
 
 # 💬 Handler
 @app.event("message")
 def handle_message_events(body, say):
     event = body.get("event", {})
 
-    # ❗ Ігноруємо повідомлення від ботів
+    # ❗ Ігноруємо ботів
     if event.get("bot_id"):
         return
 
@@ -41,8 +32,13 @@ def handle_message_events(body, say):
     if not user_text:
         return
 
-    # STEP 1 — TRANSLATE
-    translate_prompt = f"""
+    print(f"📩 New message: {user_text}")
+
+    client = get_openai_client()
+
+    try:
+        # STEP 1 — TRANSLATE
+        translate_prompt = f"""
 You are a native German copywriter.
 
 Translate this English text into natural, engaging German for an advertising context.
@@ -56,13 +52,13 @@ Rules:
 Text: {user_text}
 """
 
-    translation = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": translate_prompt}]
-    ).choices[0].message.content.strip()
+        translation = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": translate_prompt}]
+        ).choices[0].message.content.strip()
 
-    # STEP 2 — REVIEW
-    review_prompt = f"""
+        # STEP 2 — REVIEW
+        review_prompt = f"""
 You are a native German copywriter and editor.
 
 Review and improve this German text.
@@ -77,16 +73,20 @@ Rules:
 Text: {translation}
 """
 
-    final_text = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": review_prompt}]
-    ).choices[0].message.content.strip()
+        final_text = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": review_prompt}]
+        ).choices[0].message.content.strip()
 
-    # 📤 Відповідь
-    say(f"🇩🇪 {final_text}")
+        # 📤 Відповідь
+        say(f"🇩🇪 {final_text}")
+
+    except Exception as e:
+        print("❌ Error:", e)
+        say("⚠️ Something went wrong, try again.")
 
 
 # ▶️ Запуск
 if __name__ == "__main__":
-    print("⚡ Slack bot is running...")
+    print("🚀 Slack bot starting...")
     SocketModeHandler(app, SLACK_APP_TOKEN).start()
